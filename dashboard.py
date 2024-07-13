@@ -7,10 +7,6 @@ import logging
 import pandas as pd
 import time
 
-st.set_page_config(
-    page_icon="🏛️"
-)
-
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
