@@ -2,7 +2,7 @@ import streamlit as st
 import sqlite3
 import requests
 import json
-from datetime import datetime
+from datetime import datetime  # Corrected import statement
 import logging
 import pandas as pd
 import time
@@ -11,6 +11,46 @@ import time
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 ALPHA_VANTAGE_API_KEY = 'HZ2YALVCOTH1H1HN'
+
+# Database setup
+def init_db():
+    conn = sqlite3.connect('shares_data.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id INTEGER PRIMARY KEY,
+            timestamp TEXT,
+            username TEXT,
+            action TEXT,
+            details TEXT
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS shares (
+            ticker TEXT PRIMARY KEY,
+            isin TEXT,
+            outstanding_shares INTEGER,
+            last_updated TEXT,
+            details TEXT,
+            transactions TEXT,
+            actions TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# Utility functions
+def log_action(username, action, details):
+    conn = sqlite3.connect('shares_data.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO audit_logs (timestamp, username, action, details)
+        VALUES (?, ?, ?, ?)
+    ''', (datetime.now().isoformat(), username, action, details))
+    conn.commit()
+    conn.close()
 
 def fetch_data_from_alpha_vantage(ticker):
     url = f'https://www.alphavantage.co/query?function=OVERVIEW&symbol={ticker}&apikey={ALPHA_VANTAGE_API_KEY}'
@@ -64,6 +104,7 @@ def update_database(ticker, isin, outstanding_shares, details, transactions, act
     ''', (ticker, isin, outstanding_shares, datetime.now().date(), json.dumps(details), json.dumps(transactions), json.dumps(actions)))
     conn.commit()
     conn.close()
+    log_action('user', 'Update Database', f'Ticker: {ticker}, ISIN: {isin}, Shares Outstanding: {outstanding_shares}')
 
 def query_database(ticker_or_isin):
     conn = sqlite3.connect('shares_data.db')
@@ -96,6 +137,8 @@ if st.sidebar.button('Welcome'):
     st.session_state.page = "Welcome"
 if st.sidebar.button('Dashboard'):
     st.session_state.page = "Dashboard"
+if st.sidebar.button('Audit Logs'):
+    st.session_state.page = "Audit Logs"
 
 page = st.session_state.page
 
@@ -194,6 +237,8 @@ elif page == "Dashboard":
                         st.dataframe(actions_df, width=1500)
                 else:
                     st.write("No Corporate Actions found.")
+                # Log the search action including the number of shares outstanding
+                log_action('user', 'Search Ticker', f'Ticker: {result[0]}, ISIN: {result[1]}, Shares Outstanding: {result[2]}')
             else:
                 st.warning('No data found in the database. Fetching from Alpha Vantage...')
                 if ticker_or_isin.isdigit():
@@ -240,9 +285,30 @@ elif page == "Dashboard":
                                 st.dataframe(actions_df, width=1500)
                         else:
                             st.write("No Corporate Actions found.")
+                        # Log the search action including the number of shares outstanding
+                        log_action('user', 'Search Ticker', f'Ticker: {ticker}, ISIN: {isin}, Shares Outstanding: {outstanding_shares}')
                     else:
                         st.error('Failed to fetch outstanding shares data. Please check the input values and try again.')
                         if details:
                             st.write(f"API Response: {json.dumps(details, indent=2)}")
                         else:
                             st.write("No API response available.")
+
+elif page == "Audit Logs":
+    st.title('🔍 Audit Logs')
+    
+    def fetch_audit_logs():
+        conn = sqlite3.connect('shares_data.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM audit_logs')
+        logs = cursor.fetchall()
+        conn.close()
+        return logs
+
+    logs = fetch_audit_logs()
+
+    if logs:
+        logs_df = pd.DataFrame(logs, columns=['ID', 'Timestamp', 'Username', 'Action', 'Details'])
+        st.dataframe(logs_df)
+    else:
+        st.write("No audit logs found.")
