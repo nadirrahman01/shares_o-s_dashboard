@@ -11,6 +11,7 @@ import time
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 ALPHA_VANTAGE_API_KEY = 'HZ2YALVCOTH1H1HN'
+MARKETAUX_API_KEY = 'pKlPW4SUe3gHQm9dd0Top365tOjHzgnhzEdWW6Yl'
 
 # Database setup
 def init_db():
@@ -124,6 +125,15 @@ def safe_json_loads(json_string):
     except json.JSONDecodeError:
         return {}
 
+def fetch_news(ticker):
+    url = f'https://api.marketaux.com/v1/news/all?symbols={ticker}&filter_entities=true&language=en&api_token={MARKETAUX_API_KEY}'
+    response = requests.get(url)
+    if response.status_code == 200:
+        return response.json().get('data', [])
+    else:
+        logging.error(f"Failed to fetch news for ticker {ticker}. HTTP Status code: {response.status_code}")
+        return []
+
 # Streamlit layout
 st.set_page_config(page_title="Outstanding Shares Dashboard", layout="wide")
 
@@ -139,13 +149,15 @@ if st.sidebar.button('Dashboard'):
     st.session_state.page = "Dashboard"
 if st.sidebar.button('Audit Logs'):
     st.session_state.page = "Audit Logs"
+if st.sidebar.button('News'):
+    st.session_state.page = "News"
 
 page = st.session_state.page
 
 if page == "Welcome":
     st.title('Welcome to the Outstanding Shares Dashboard')
     st.write("""
-    This dashboard allows you to search for stock tickers or ISINs and retrieve information about outstanding shares, insider transactions, and corporate actions.
+    This dashboard allows you to search for stock tickers or ISINs and retrieve information about outstanding shares, insider transactions, corporate actions, and the latest financial news.
     You can also download the results as a PDF report.
     """)
     st.markdown(
@@ -240,59 +252,51 @@ elif page == "Dashboard":
                 # Log the search action including the number of shares outstanding
                 log_action('user', 'Search Ticker', f'Ticker: {result[0]}, ISIN: {result[1]}, Shares Outstanding: {result[2]}')
             else:
-                st.warning('No data found in the database. Fetching from Alpha Vantage...')
-                if ticker_or_isin.isdigit():
-                    st.error("ISIN should not be numeric. Please enter a valid ticker or ISIN.")
-                else:
-                    ticker = ticker_or_isin
-                    isin = ticker_or_isin
-                    outstanding_shares, details = fetch_data_from_alpha_vantage(ticker)
-                    transactions = fetch_insider_transactions(ticker)
-                    actions = fetch_corporate_actions(ticker)
-                    if outstanding_shares:
-                        update_database(ticker, isin, outstanding_shares, details, transactions, actions)
-                        st.success('Data fetched and updated successfully.')
-                        st.write(f"### {ticker} - {isin}")
+                st.warning('Data not found in the database. Fetching from API...')
+                ticker, isin = (ticker_or_isin, None) if ticker_or_isin.isalpha() else (None, ticker_or_isin)
+                outstanding_shares, details = fetch_data_from_alpha_vantage(ticker) if ticker else (None, None)
+                transactions = fetch_insider_transactions(ticker) if ticker else []
+                actions = fetch_corporate_actions(ticker) if ticker else []
+                if outstanding_shares:
+                    update_database(ticker, isin, outstanding_shares, details, transactions, actions)
+                    st.success('Data fetched and updated successfully.')
+                    st.write(f"### {ticker} - {isin}")
 
-                        st.markdown(f"""
-                        <div style='display: flex;'>
-                            <div style='background-color:#228B22; color:white; padding: 10px; border-radius: 5px; margin-right: 10px;'>
-                                Shares Outstanding: {outstanding_shares:,}
-                            </div>
-                            <div style='background-color:#32CD32; color:white; padding: 10px; border-radius: 5px;'>
-                                Last Updated: {datetime.now().date()}
-                            </div>
+                    st.markdown(f"""
+                    <div style='display: flex;'>
+                        <div style='background-color:#228B22; color:white; padding: 10px; border-radius: 5px; margin-right: 10px;'>
+                            Shares Outstanding: {outstanding_shares:,}
                         </div>
-                        """, unsafe_allow_html=True)
+                        <div style='background-color:#32CD32; color:white; padding: 10px; border-radius: 5px;'>
+                            Last Updated: {datetime.now().date()}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-                        st.write("### Details")
-                        details_df = pd.DataFrame(details.items(), columns=['Key', 'Value'])
+                    st.write("### Details")
+                    details_df = pd.DataFrame(details.items(), columns=['Key', 'Value'])
+                    with st.container():
+                        st.dataframe(details_df, width=1500)
+
+                    st.write("### Insider Transactions")
+                    if transactions:
+                        transactions_df = pd.DataFrame(transactions)
                         with st.container():
-                            st.dataframe(details_df, width=1500)
-
-                        st.write("### Insider Transactions")
-                        if transactions:
-                            transactions_df = pd.DataFrame(transactions)
-                            with st.container():
-                                st.dataframe(transactions_df, width=1500)
-                        else:
-                            st.write("No Insider Transactions found.")
-
-                        st.write("### Corporate Actions")
-                        if actions:
-                            actions_df = pd.DataFrame(actions)
-                            with st.container():
-                                st.dataframe(actions_df, width=1500)
-                        else:
-                            st.write("No Corporate Actions found.")
-                        # Log the search action including the number of shares outstanding
-                        log_action('user', 'Search Ticker', f'Ticker: {ticker}, ISIN: {isin}, Shares Outstanding: {outstanding_shares}')
+                            st.dataframe(transactions_df, width=1500)
                     else:
-                        st.error('Failed to fetch outstanding shares data. Please check the input values and try again.')
-                        if details:
-                            st.write(f"API Response: {json.dumps(details, indent=2)}")
-                        else:
-                            st.write("No API response available.")
+                        st.write("No insider transactions found.")
+
+                    st.write("### Corporate Actions")
+                    if actions:
+                        actions_df = pd.DataFrame(actions)
+                        with st.container():
+                            st.dataframe(actions_df, width=1500)
+                    else:
+                        st.write("No corporate actions found.")
+                    # Log the search action including the number of shares outstanding
+                    log_action('user', 'Search Ticker', f'Ticker: {ticker}, ISIN: {isin}, Shares Outstanding: {outstanding_shares}')
+                else:
+                    st.error('Failed to fetch data. Please check the input values and try again.')
 
 elif page == "Audit Logs":
     st.title('🔍 Audit Logs')
@@ -312,3 +316,23 @@ elif page == "Audit Logs":
         st.dataframe(logs_df)
     else:
         st.write("No audit logs found.")
+
+elif page == "News":
+    st.title('📰 News and Updates')
+    
+    ticker = st.text_input('Enter Ticker:', placeholder='e.g. AAPL')
+    if st.button('Fetch News'):
+        if ticker:
+            with st.spinner('Fetching news...'):
+                articles = fetch_news(ticker)
+                if articles:
+                    for article in articles:
+                        st.write(f"### {article['title']}")
+                        st.write(f"{article['description']}")
+                        st.write(f"*Published at: {article['published_at']}*")
+                        st.write(f"[Read more]({article['url']})")
+                        st.write("---")
+                else:
+                    st.write("No news articles found.")
+        else:
+            st.write("Please enter a ticker symbol.")
