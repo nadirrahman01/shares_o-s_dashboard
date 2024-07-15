@@ -7,7 +7,7 @@ import logging
 import pandas as pd
 import time
 
-# Configure logging
+# config logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 ALPHA_VANTAGE_API_KEY = 'HZ2YALVCOTH1H1HN'
