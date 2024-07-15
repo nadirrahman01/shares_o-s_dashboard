@@ -2,7 +2,7 @@ import streamlit as st
 import sqlite3
 import requests
 import json
-from datetime import datetime  # Corrected import statement
+from datetime import datetime
 import logging
 import pandas as pd
 import time
@@ -42,7 +42,7 @@ def init_db():
 
 init_db()
 
-# Utility functions
+# functions
 def log_action(username, action, details):
     conn = sqlite3.connect('shares_data.db')
     cursor = conn.cursor()
@@ -134,14 +134,13 @@ def fetch_news(ticker):
         logging.error(f"Failed to fetch news for ticker {ticker}. HTTP Status code: {response.status_code}")
         return []
 
-# Streamlit layout
+# layout
 st.set_page_config(page_title="Outstanding Shares Dashboard", layout="wide")
 
-# Initialize session state
 if "page" not in st.session_state:
     st.session_state.page = "Welcome"
 
-# Navigation
+# nav
 st.sidebar.title("Navigation")
 if st.sidebar.button('Welcome'):
     st.session_state.page = "Welcome"
